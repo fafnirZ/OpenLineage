@@ -111,7 +111,42 @@ public class IcebergHandler implements CatalogHandler {
                 Collectors.toMap(
                     x -> x.getKey().substring(prefix.length() + 1), // handle dot after prefix
                     Map.Entry::getValue));
-    return catalogConf;
+
+    log.info(catalogConf.toString());
+    if (!catalogConf.isEmpty() && catalogConf.containsKey(TYPE)) {
+      if ("iceberg".equals(catalogName) && "org.apache.iceberg.nessie.NessieCatalog".equals(catalogConf.get("catalog-impl"))) {
+          log.info("Using Iceberg with NessieCatalog");
+      } else {
+          throw new UnsupportedCatalogException(catalogName);
+      }
+    }
+
+    log.info(catalogConf.get(TYPE));
+
+    String warehouse = catalogConf.get(CatalogProperties.WAREHOUSE_LOCATION);
+    DatasetIdentifier di = PathUtils.fromPath(new Path(warehouse, identifier.toString()));
+
+    if (catalogConf.get(TYPE).equals("hive")) {
+      di.withSymlink(
+          getHiveIdentifier(
+              session, catalogConf.get(CatalogProperties.URI), identifier.toString()));
+    } else if (catalogConf.get(TYPE).equals("hadoop")) {
+      di.withSymlink(
+          identifier.toString(),
+          StringUtils.substringBeforeLast(
+              di.getName(), File.separator), // parent location from a name becomes a namespace
+          DatasetIdentifier.SymlinkType.TABLE);
+    } else if (catalogConf.get(TYPE).equals("rest")) {
+      di.withSymlink(
+          getRestIdentifier(
+              session, catalogConf.get(CatalogProperties.URI), identifier.toString()));
+    } else if (catalogConf.get(TYPE).equals("iceberg") && "org.apache.iceberg.nessie.NessieCatalog".equals(catalogConf.get("catalog-impl"))) {
+      di.withSymlink(
+          getNessieIdentifier(
+              session, catalogConf.get(CatalogProperties.URI), identifier.toString()));
+    }
+
+    return di;
   }
 
   @SneakyThrows
